@@ -6,6 +6,7 @@
   <title>OTR DC Site Visit</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
@@ -156,6 +157,12 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
         Export as PDF
+      </button>
+      <button class="btn-secondary" onclick="generateDOCX()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        Download Editable Draft (.docx)
       </button>
       <button class="btn-secondary" onclick="sendEmail()">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -693,6 +700,181 @@
         body += `\nNote: Export PDF first and attach it manually for photos.\n`;
         window.location.href = `mailto:?subject=${subject}&body=${encodeURIComponent(body)}`;
         showToast('Email client opened — attach PDF manually for photos');
+      }
+    }
+
+    // ── Word Document (Editable Draft) ───────────────────────────
+    async function generateDOCX() {
+      if (!window.docx) {
+        showToast('Word library still loading — try again in a moment');
+        return;
+      }
+
+      const state = getFormState();
+      showToast('Building Word document…');
+
+      try {
+        const {
+          Document, Packer, Paragraph, TextRun, HeadingLevel,
+          AlignmentType, BorderStyle, Table, TableRow, TableCell,
+          WidthType, ShadingType, UnderlineType
+        } = window.docx;
+
+        const BLUE   = '2563EB';
+        const SLATE  = '334155';
+        const GREY   = '64748B';
+        const LIGHT  = '94A3B8';
+        const BLACK  = '1E293B';
+
+        function heading(text, color = BLUE) {
+          return new Paragraph({
+            children: [new TextRun({ text, bold: true, size: 28, color })],
+            spacing: { before: 320, after: 120 }
+          });
+        }
+
+        function label(text) {
+          return new TextRun({ text, bold: true, size: 20, color: GREY });
+        }
+
+        function body(text, placeholder = false) {
+          return new TextRun({ text, size: 21, color: placeholder ? LIGHT : BLACK });
+        }
+
+        function divider() {
+          return new Paragraph({
+            border: { bottom: { color: 'E2E8F0', space: 1, style: BorderStyle.SINGLE, size: 6 } },
+            spacing: { before: 240, after: 240 }
+          });
+        }
+
+        const children = [];
+
+        // ── Cover ──
+        children.push(new Paragraph({
+          children: [new TextRun({ text: 'OTR DC Site Visit', bold: true, size: 48, color: BLUE })],
+          spacing: { after: 80 }
+        }));
+        children.push(new Paragraph({
+          children: [new TextRun({ text: 'Distribution Centre Audit Report  ·  Positively Powered', size: 22, color: GREY })],
+          spacing: { after: 80 }
+        }));
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `Generated: ${new Date().toLocaleDateString('en-AU', { day: '2-digit', month: 'long', year: 'numeric' })}`, size: 18, color: LIGHT })],
+          spacing: { after: 360 }
+        }));
+
+        // ── Metadata table ──
+        const metaRows = [
+          ['DC / Site Name', state.dcName || ''],
+          ['Auditor Name',   state.auditorName || ''],
+          ['Visit Date',     state.visitDate ? formatDate(state.visitDate) : ''],
+        ];
+
+        children.push(new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top:    { style: BorderStyle.NONE },
+            bottom: { style: BorderStyle.NONE },
+            left:   { style: BorderStyle.NONE },
+            right:  { style: BorderStyle.NONE },
+            insideH:{ style: BorderStyle.NONE },
+            insideV:{ style: BorderStyle.NONE },
+          },
+          rows: metaRows.map(([lbl, val]) => new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 28, type: WidthType.PERCENTAGE },
+                shading: { type: ShadingType.SOLID, color: 'F8FAFC' },
+                children: [new Paragraph({ children: [new TextRun({ text: lbl, bold: true, size: 20, color: GREY })] })],
+              }),
+              new TableCell({
+                width: { size: 72, type: WidthType.PERCENTAGE },
+                shading: { type: ShadingType.SOLID, color: 'F8FAFC' },
+                children: [new Paragraph({ children: [new TextRun({ text: val || '—', size: 20, color: val ? BLACK : LIGHT })] })],
+              }),
+            ]
+          }))
+        }));
+
+        children.push(divider());
+
+        // ── Questions ──
+        QUESTIONS.forEach((q, i) => {
+          const answer    = state.answers[i] || '';
+          const photoCount = photos[i].length;
+
+          // Question number + short title
+          children.push(new Paragraph({
+            children: [
+              new TextRun({ text: `${i + 1}.   `, bold: true, size: 24, color: BLUE }),
+              new TextRun({ text: q.short, bold: true, size: 24, color: BLUE }),
+            ],
+            spacing: { before: i === 0 ? 0 : 360, after: 100 }
+          }));
+
+          // Full question text
+          children.push(new Paragraph({
+            children: [new TextRun({ text: q.text, size: 20, italics: true, color: SLATE })],
+            spacing: { after: 180 }
+          }));
+
+          // Notes label
+          children.push(new Paragraph({
+            children: [label('Notes')],
+            spacing: { after: 80 }
+          }));
+
+          // Answer box — shaded background, editable in Word
+          children.push(new Paragraph({
+            children: [body(answer || 'Enter your notes here…', !answer)],
+            shading: { type: ShadingType.SOLID, color: 'F8FAFC' },
+            spacing: { after: 160 },
+            indent: { left: 120, right: 120 }
+          }));
+
+          // Photo note
+          if (photoCount > 0) {
+            children.push(new Paragraph({
+              children: [new TextRun({
+                text: `📷 ${photoCount} photo(s) captured — export as PDF to include images`,
+                size: 18, color: LIGHT, italics: true
+              })],
+              spacing: { after: 120 }
+            }));
+          }
+
+          if (i < QUESTIONS.length - 1) children.push(divider());
+        });
+
+        // ── Footer note ──
+        children.push(divider());
+        children.push(new Paragraph({
+          children: [new TextRun({ text: 'This document is an editable draft. Edit as needed before sending. Attach the exported PDF for photos.', size: 17, color: LIGHT, italics: true })],
+          spacing: { after: 0 }
+        }));
+
+        const doc = new Document({
+          creator:     state.auditorName || 'OTR DC Site Visit App',
+          title:       `OTR DC Site Visit — ${state.dcName || 'Report'}`,
+          description: 'Distribution Centre Audit — Editable Draft',
+          sections: [{ children }]
+        });
+
+        const blob = await Packer.toBlob(doc);
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `OTR_DC_Visit_Draft_${(state.dcName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${state.visitDate || getTodayDate()}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Editable draft downloaded!');
+
+      } catch (err) {
+        console.error(err);
+        showToast('Word export failed — check console');
       }
     }
 
