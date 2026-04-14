@@ -79,6 +79,32 @@
       box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
     .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Voice note button ── */
+    .voice-btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: #f8fafc; border: 1.5px solid #e2e8f0;
+      border-radius: 10px; padding: 9px 14px; cursor: pointer;
+      font-size: 13px; font-weight: 600; color: #475569;
+      transition: all 0.15s; font-family: inherit;
+    }
+    .voice-btn:active { transform: scale(0.97); }
+    .voice-btn.recording { background: #fef2f2 !important; border-color: #fca5a5 !important; color: #ef4444 !important; }
+    .voice-btn.recording svg { stroke: #ef4444; }
+    .voice-pulse {
+      width: 9px; height: 9px; border-radius: 50%; background: #ef4444;
+      animation: voicePulse 1s ease-in-out infinite;
+      display: inline-block; flex-shrink: 0;
+    }
+    @keyframes voicePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(1.4); }
+    }
+    .voice-interim {
+      font-size: 12px; color: #94a3b8; font-style: italic;
+      margin-top: 5px; min-height: 0; padding: 0 2px; line-height: 1.4;
+      transition: all 0.2s;
+    }
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -248,6 +274,15 @@
             placeholder="Type your observations and notes here…"
             oninput="onAnswerChange()"
           ></textarea>
+          <div style="margin-top:10px;">
+            <button type="button" id="voice-btn-${i}" class="voice-btn" onclick="toggleVoiceNote(${i})">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+              </svg>
+              <span id="voice-btn-label-${i}">Voice note</span>
+            </button>
+            <div class="voice-interim" id="voice-interim-${i}"></div>
+          </div>
           <div style="margin-top:12px;">
             <p style="font-size:12px; font-weight:600; color:#64748b; margin-bottom:8px;">Photos</p>
             <div class="photo-grid" id="photo-grid-${i}">
@@ -658,6 +693,112 @@
         body += `\nNote: Export PDF first and attach it manually for photos.\n`;
         window.location.href = `mailto:?subject=${subject}&body=${encodeURIComponent(body)}`;
         showToast('Email client opened — attach PDF manually for photos');
+      }
+    }
+
+    // ── Voice Recognition ─────────────────────────────────────────
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let activeRecognition = null;
+    let activeVoiceIndex = null;
+
+    function toggleVoiceNote(questionIndex) {
+      if (!SpeechRec) {
+        showToast('Voice notes not supported on this browser. Try Chrome.');
+        return;
+      }
+
+      // Tap again on the active question → stop recording
+      if (activeVoiceIndex === questionIndex && activeRecognition) {
+        activeRecognition.stop();
+        return;
+      }
+
+      // Stop any other active recording first
+      if (activeRecognition) {
+        activeRecognition.abort();
+        if (activeVoiceIndex !== null) setVoiceBtnState(activeVoiceIndex, 'idle');
+      }
+
+      const recognition = new SpeechRec();
+      recognition.lang = 'en-AU';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      activeRecognition = recognition;
+      activeVoiceIndex = questionIndex;
+      setVoiceBtnState(questionIndex, 'recording');
+
+      recognition.onresult = (event) => {
+        let interimText = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            // Append finalised words to textarea
+            const textarea = document.getElementById(`answer-${questionIndex}`);
+            if (textarea) {
+              const existing = textarea.value.trimEnd();
+              const spacer = existing.length > 0 ? ' ' : '';
+              textarea.value = existing + spacer + transcript.trim();
+              onAnswerChange();
+            }
+          } else {
+            interimText += transcript;
+          }
+        }
+        // Show live interim text below button
+        const interimEl = document.getElementById(`voice-interim-${questionIndex}`);
+        if (interimEl) interimEl.textContent = interimText ? '🎙 ' + interimText : '';
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+          showToast('Microphone access denied — check browser settings');
+        } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
+          showToast('Voice error: ' + event.error);
+        }
+        cleanupVoice(questionIndex);
+      };
+
+      recognition.onend = () => {
+        // Auto-restart if still meant to be recording (continuous mode can stop mid-session)
+        if (activeVoiceIndex === questionIndex && activeRecognition === recognition) {
+          try { recognition.start(); } catch(e) { cleanupVoice(questionIndex); }
+        }
+      };
+
+      try {
+        recognition.start();
+      } catch(e) {
+        showToast('Could not start microphone');
+        cleanupVoice(questionIndex);
+      }
+    }
+
+    function cleanupVoice(questionIndex) {
+      activeRecognition = null;
+      activeVoiceIndex = null;
+      setVoiceBtnState(questionIndex, 'idle');
+      const interimEl = document.getElementById(`voice-interim-${questionIndex}`);
+      if (interimEl) interimEl.textContent = '';
+    }
+
+    function setVoiceBtnState(questionIndex, state) {
+      const btn = document.getElementById(`voice-btn-${questionIndex}`);
+      const label = document.getElementById(`voice-btn-label-${questionIndex}`);
+      if (!btn || !label) return;
+      if (state === 'recording') {
+        btn.classList.add('recording');
+        btn.innerHTML = `
+          <span class="voice-pulse"></span>
+          <span id="voice-btn-label-${questionIndex}">Stop recording</span>`;
+      } else {
+        btn.classList.remove('recording');
+        btn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+          </svg>
+          <span id="voice-btn-label-${questionIndex}">Voice note</span>`;
       }
     }
 
