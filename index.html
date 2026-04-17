@@ -109,7 +109,29 @@
 </head>
 <body class="bg-slate-100 min-h-screen">
 
-  <div class="max-w-[430px] mx-auto pb-10">
+  <!-- Password Screen -->
+  <div id="lockScreen" style="display:flex; align-items:center; justify-content:center; min-height:100vh;">
+    <div style="max-width:340px; width:90%; text-align:center;">
+      <div style="background: linear-gradient(135deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%); border-radius:20px; padding:40px 28px; box-shadow: 0 8px 30px rgba(37,99,235,0.3);">
+        <div style="width:56px; height:56px; background:rgba(255,255,255,0.15); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+        <p style="color:rgba(255,255,255,0.7); font-size:12px; font-weight:600; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px;">Positively Powered</p>
+        <h2 style="color:white; font-size:22px; font-weight:700; margin-bottom:24px;">OTR DC Site Visit</h2>
+        <input type="password" id="passwordInput" placeholder="Enter password" onkeydown="if(event.key==='Enter')checkPassword()"
+          style="width:100%; padding:14px 16px; border:2px solid rgba(255,255,255,0.25); border-radius:12px; background:rgba(255,255,255,0.1); color:white; font-size:15px; font-family:inherit; outline:none; text-align:center; margin-bottom:12px;"
+        >
+        <p id="passwordError" style="color:#fca5a5; font-size:13px; font-weight:500; margin-bottom:12px; min-height:20px;"></p>
+        <button onclick="checkPassword()" style="width:100%; padding:14px; border:none; border-radius:12px; background:white; color:#2563eb; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit;">
+          Unlock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="appContent" class="max-w-[430px] mx-auto pb-10" style="display:none;">
 
     <!-- Header -->
     <div style="background: linear-gradient(135deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);" class="px-5 pt-12 pb-6 text-white">
@@ -207,6 +229,32 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    // ── Password Gate ────────────────────────────────────────────
+    const PASS_HASH = '5a3db7e5e8ba4ae45f5f3e2e46f3e8c1c8a0760be9e5d3c2a1b0f9e8d7c6b5a4'; // placeholder, using direct compare
+    const CORRECT_PASS = 'TH87ufMURzz4YpvN';
+    const SESSION_KEY = 'otr_unlocked';
+
+    function checkPassword() {
+      const input = document.getElementById('passwordInput').value;
+      if (input === CORRECT_PASS) {
+        sessionStorage.setItem(SESSION_KEY, '1');
+        document.getElementById('lockScreen').style.display = 'none';
+        document.getElementById('appContent').style.display = 'block';
+      } else {
+        document.getElementById('passwordError').textContent = 'Incorrect password';
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('passwordInput').focus();
+      }
+    }
+
+    // Auto-unlock if already authenticated this session
+    if (sessionStorage.getItem(SESSION_KEY) === '1') {
+      document.getElementById('lockScreen').style.display = 'none';
+      document.getElementById('appContent').style.display = 'block';
+    } else {
+      document.getElementById('passwordInput').focus();
+    }
+
     const QUESTIONS = [
       {
         short: "Product Life Protection",
